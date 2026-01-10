@@ -1,0 +1,289 @@
+---
+title: "Happiness R Notebook"
+output: html_document
+---
+
+# Part 1 Data Exploration & Visualization
+
+## Import necessary libraries
+```{r}
+#Install necessary libraries if necessary
+#install.packages("dplyr")
+#install.packages("tidyr")
+#nstall.packages("reshape2")
+
+#Load necessary libraries
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(reshape2)
+```
+
+## Load and pre-process dataset
+```{r}
+# Set working directory
+setwd("C:/Users/Veteran/OneDrive - The University of Texas at Dallas/School/BUAN 6356- Analytics with R/Project- Group A")
+
+# Import World Happiness Report (2024)
+happiness <- read.csv("WorldHappinessReport_2024.csv", header=T, stringsAsFactors=FALSE)
+
+# Check the structure of the data
+str(happiness)
+```
+Rename columns
+```{r}
+# Rename columns for easier reference
+colnames(happiness) <- c("Country_name", 
+                         "Year", 
+                         "Life_Ladder", 
+                         "Log_GDP_per_capita", 
+                         "Social_support", 
+                         "Healthy_life_expectancy", 
+                         "Freedom_to_make_choices", 
+                         "Generosity", 
+                         "Perceptions_of_corruption", 
+                         "Positive_affect", 
+                         "Negative_affect")
+
+# Check if the renaming worked
+colnames(happiness)
+```
+
+### Redefine Life Ladder to dependent variable "Happy"
+```{r}
+# Create new dataset
+happiness2 <- happiness
+
+# Create a new column 'happy' based on 'Life_Ladder' values
+happiness2$happy <- ifelse(happiness2$Life_Ladder <= 5, 0, 
+                           ifelse(happiness2$Life_Ladder > 5, 1, NA))
+
+#Remove the "Life Ladder" variable
+happiness2$Life_Ladder <- NULL
+
+# Recheck the structure of the new data to confirm the addition
+str(happiness2)
+```
+
+Check for NA values
+```{r}
+# Define the function to count NA values in each column
+count_na_values <- function(df) {
+  na_counts <- sapply(df, function(x) sum(is.na(x)))
+  return(data.frame(Variable = names(na_counts), NA_Count = na_counts))
+}
+
+# Check NA counts
+na_counts <- count_na_values(happiness)
+print(na_counts)
+```
+### Modify data to remove NA values
+
+```{r}
+# Function to replace NA values with the mean of each country
+replace_na_with_country_mean <- function(df) {
+  # Identify numeric columns, excluding 'Year' and 'happy' (if present)
+  numeric_columns <- colnames(df)[sapply(df, is.numeric) & colnames(df) != "Year" & colnames(df) != "happy"]
+  
+  # Loop through each numeric column to replace NA values with the country mean
+  for (col in numeric_columns) {
+    # Calculate the mean of each column grouped by 'Country_name', ignoring NA values
+    country_means <- aggregate(df[[col]], by = list(df$Country_name), FUN = function(x) mean(x, na.rm = TRUE))
+    names(country_means) <- c("Country_name", "mean_value")
+    
+    # Replace NA values in the column with the calculated mean for each country
+    df[[col]] <- ifelse(is.na(df[[col]]),
+                        country_means$mean_value[match(df$Country_name, country_means$Country_name)],
+                        df[[col]])
+  }
+  
+  return(df)
+}
+
+# Apply the function to replace NA values in happiness2 with country means
+happiness2 <- replace_na_with_country_mean(happiness2)
+
+# Recheck NA counts
+na_counts2 <- count_na_values(happiness2)
+print(na_counts2)
+```
+Visualize NA values
+```{r}
+# Filter rows with NA values and add a column for NA count per row
+rows_with_na <- happiness2[rowSums(is.na(happiness2)) > 0, ]
+rows_with_na$NA_Count <- rowSums(is.na(rows_with_na))
+
+# Plotting the count of NA values by country
+ggplot(rows_with_na, aes(x = Country_name, y = NA_Count)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  labs(title = "Count of NA Values by Country",
+       x = "Country",
+       y = "NA Count") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+* China: 17 NAs (No data for Perceptions of Corruption)
+* Cuba: Only 1 record (2006) with 4 NAs (Log GDP per capita, Healthy life expectancy at birth, Generosity, Perceptions of corruption)
+* Hong Kong S.A.R. of China: 13 NAs (No data for healthy life expectancy at birth)
+* Kosovo: 17 NAs (No data for Healthy life expectancy at birth)
+* Maldives: Only 1 record (2018) 3 NAs (No data for Perceptions of corruption, Positive, Negative Effect)
+* Oman: Only 1 record (2011) with 3 NAs (No data for Social Support, Perceptions of corruption, Positive)
+* Somaliland region: 12 NAs (No data for Log GDP per capita, Healthy life expectancy at birth, Generosity)
+* South Sudan: 12 NAs (No data for Log GDP per capita, Healthy life expectancy at birth, Generosity)
+* State of Palestine: 16 NAs (No data for Healthy life expectancy at birth)
+* Turkmenistan: 10 NAs (No data for Perception of Corruption)
+
+Remove NA records or variables
+```{r}
+# Filter out records for Cuba, Maldives, and Oman (3/2363 Records or 0.13%) which have multiple NA values and only 1 record per country.
+happiness2 <- happiness2 %>%
+  filter(!Country_name %in% c("Cuba", "Maldives", "Oman")) 
+
+# Filter out records for Hong Kong S.A.R. of China, Kosovo, Somaliland region,South Sudan,State of Palestine,Turkmenistan (64/2363 Records or 2.71%) which have NA values.
+
+happiness2 <- happiness2 %>%
+  filter(!Country_name %in% c("Hong Kong S.A.R. of China", "Kosovo", "Somaliland region","South Sudan","State of Palestine","Turkmenistan"))
+
+# Remove the Perceptions_of_corruption column
+happiness2$Perceptions_of_corruption <- NULL
+
+# Recheck NA counts
+na_counts2 <- count_na_values(happiness2)
+print(na_counts2)
+```
+
+## Create summary statistics table
+```{r}
+# Define the columns for which we want to calculate the statistics
+summary_stats <- tibble(
+  Variable = c("Year", "Log_GDP_per_capita", "Social_support",
+               "Healthy_life_expectancy", "Freedom_to_make_choices", "Generosity", 
+               "Positive_affect", "Negative_affect", "happy"),
+  Mean = c(
+    mean(happiness2$Year, na.rm = TRUE),
+    mean(happiness2$Log_GDP_per_capita, na.rm = TRUE),
+    mean(happiness2$Social_support, na.rm = TRUE),
+    mean(happiness2$Healthy_life_expectancy, na.rm = TRUE),
+    mean(happiness2$Freedom_to_make_choices, na.rm = TRUE),
+    mean(happiness2$Generosity, na.rm = TRUE),
+    mean(happiness2$Positive_affect, na.rm = TRUE),
+    mean(happiness2$Negative_affect, na.rm = TRUE),
+    mean(happiness2$happy, na.rm = TRUE)
+  ),
+  `Std. Dev.` = c(
+    sd(happiness2$Year, na.rm = TRUE),
+    sd(happiness2$Log_GDP_per_capita, na.rm = TRUE),
+    sd(happiness2$Social_support, na.rm = TRUE),
+    sd(happiness2$Healthy_life_expectancy, na.rm = TRUE),
+    sd(happiness2$Freedom_to_make_choices, na.rm = TRUE),
+    sd(happiness2$Generosity, na.rm = TRUE),
+    sd(happiness2$Positive_affect, na.rm = TRUE),
+    sd(happiness2$Negative_affect, na.rm = TRUE),
+    sd(happiness2$happy, na.rm = TRUE)
+  ),
+  Min = c(
+    min(happiness2$Year, na.rm = TRUE),
+    min(happiness2$Log_GDP_per_capita, na.rm = TRUE),
+    min(happiness2$Social_support, na.rm = TRUE),
+    min(happiness2$Healthy_life_expectancy, na.rm = TRUE),
+    min(happiness2$Freedom_to_make_choices, na.rm = TRUE),
+    min(happiness2$Generosity, na.rm = TRUE),
+    min(happiness2$Positive_affect, na.rm = TRUE),
+    min(happiness2$Negative_affect, na.rm = TRUE),
+    min(happiness2$happy, na.rm = TRUE)
+  ),
+  Max = c(
+    max(happiness2$Year, na.rm = TRUE),
+    max(happiness2$Log_GDP_per_capita, na.rm = TRUE),
+    max(happiness2$Social_support, na.rm = TRUE),
+    max(happiness2$Healthy_life_expectancy, na.rm = TRUE),
+    max(happiness2$Freedom_to_make_choices, na.rm = TRUE),
+    max(happiness2$Generosity, na.rm = TRUE),
+    max(happiness2$Positive_affect, na.rm = TRUE),
+    max(happiness2$Negative_affect, na.rm = TRUE),
+    max(happiness2$happy, na.rm = TRUE)
+  )
+)
+
+# Print the formatted summary statistics table
+print(summary_stats)
+```
+
+## Visualize data and remove Outliers
+
+### Plot Box-Plots of variables to identify outliers
+```{r}
+# Melt the data into long format, specifying the factor levels to preserve order
+variables_long <- melt(happiness2[, c("Year", "Log_GDP_per_capita", "Social_support", 
+                                      "Healthy_life_expectancy", "Freedom_to_make_choices", 
+                                      "Generosity", "Positive_affect", "Negative_affect", "happy")], 
+                       id.vars = "Year", 
+                       variable.name = "Variable", 
+                       value.name = "Value")
+
+# Set the 'Variable' column as a factor with specified levels to maintain order
+variables_long$Variable <- factor(variables_long$Variable, levels = c("Year", "Log_GDP_per_capita", 
+                                                                      "Social_support", "Healthy_life_expectancy", 
+                                                                      "Freedom_to_make_choices", "Generosity", 
+                                                                      "Positive_affect", "Negative_affect", "happy"))
+
+# Create the boxplot with ggplot2 and add outline around each plot
+ggplot(variables_long, aes(x = Value, y = Variable)) +
+  geom_boxplot(fill = "lightblue", color = "darkblue", outlier.color = "red", 
+               outlier.shape = 19, outlier.size = 2, width = 0.7) +
+  facet_wrap(~ Variable, scales = "free", ncol = 3) + 
+  theme_minimal() +
+  theme(strip.text = element_text(size = 10), 
+        panel.spacing = unit(1, "lines"),
+        axis.title = element_blank(),
+        axis.text.y = element_blank(),
+        panel.border = element_rect(color = "black", fill = NA, size = 1)) +  # Add black outline around each plot
+  labs(title = "Boxplots of Independent Happiness Variables")
+```
+
+### Remove outliers using IQR
+```{r}
+# Function to remove outliers from each numeric column in the original dataset
+remove_outliers_wide <- function(df) {
+  # Identify numeric columns
+  numeric_columns <- names(df)[sapply(df, is.numeric)]
+  
+  for (col in numeric_columns) {
+    Q1 <- quantile(df[[col]], 0.25, na.rm = TRUE)
+    Q3 <- quantile(df[[col]], 0.75, na.rm = TRUE)
+    IQR <- Q3 - Q1
+    df <- df %>% filter(df[[col]] >= (Q1 - 1.5 * IQR) & df[[col]] <= (Q3 + 1.5 * IQR))
+  }
+  
+  return(df)
+}
+
+# Apply the function to create a cleaned dataset without outliers
+happiness_no_outliers <- remove_outliers_wide(happiness2)
+```
+
+```{r}
+# Select only numeric columns for plotting
+numeric_columns <- happiness_no_outliers %>%
+  select(Log_GDP_per_capita, Social_support, Healthy_life_expectancy, 
+         Freedom_to_make_choices, Generosity, Positive_affect, Negative_affect)
+
+# Melt the data into long format for ggplot
+plot_data <- melt(numeric_columns, variable.name = "Variable", value.name = "Value")
+
+# Create the boxplot with ggplot2 and add outline around each plot
+ggplot(plot_data, aes(x = Value, y = Variable)) +
+  geom_boxplot(fill = "lightblue", color = "darkblue", outlier.color = "red", 
+               outlier.shape = 19, outlier.size = 2, width = 0.7) +
+  facet_wrap(~ Variable, scales = "free", ncol = 3) + 
+  theme_minimal() +
+  theme(strip.text = element_text(size = 10), 
+        panel.spacing = unit(1, "lines"),
+        axis.title = element_blank(),
+        axis.text.y = element_blank(),
+        panel.border = element_rect(color = "black", fill = NA, size = 1)) +  # Add black outline around each plot
+  labs(title = "Boxplots of Independent Happiness Variables without Outliers")
+```
+
