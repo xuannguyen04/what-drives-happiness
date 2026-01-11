@@ -287,3 +287,4 @@ ggplot(plot_data, aes(x = Value, y = Variable)) +
   labs(title = "Boxplots of Independent Happiness Variables without Outliers")
 ```
 
+
